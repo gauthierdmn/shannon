@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/gauthierdmn/shannon/pkg/llm"
 )
@@ -21,12 +23,15 @@ func main() {
 		log.Fatal("--message is required")
 	}
 
-	config := llm.New("gpt-5-nano", *apiToken)
+	client := llm.New("gpt-5-nano", *apiToken)
 
-	answer, err := config.Complete(*message, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	answer, err := client.Complete(ctx, *message, nil)
 
 	if err != nil {
-		log.Fatalf("Error: %v", err)
+		log.Fatalf("Application exited: : %v", err)
 	}
 
 	fmt.Println("LLM answer:", answer)
