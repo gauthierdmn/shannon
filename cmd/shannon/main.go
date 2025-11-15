@@ -1,38 +1,68 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"flag"
 	"fmt"
 	"log"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/gauthierdmn/shannon/pkg/llm"
 )
 
 func main() {
-	apiToken := flag.String("api-token", "", "Token to access LLM API.")
-	message := flag.String("message", "", "Message to send to the LLM.")
+	modelProvider := flag.String("model-provider", "OpenAI", "The provider of the LLM API.")
+	apiKey := flag.String("api-key", "", "A token to access the LLM API.")
+	modelName := flag.String("model-name", "gpt-5-nano", "The name of the LLM model to use.")
 
 	flag.Parse()
 
-	if *apiToken == "" {
+	if *apiKey == "" {
 		log.Fatal("--api-token is required.")
 	}
-	if *message == "" {
-		log.Fatal("--message is required")
-	}
 
-	client := llm.New("gpt-5-nano", *apiToken)
+	var client llm.Client
+
+	switch strings.ToLower(*modelProvider) {
+	case "openai":
+		client = llm.NewOpenaiClient(*modelName, *apiKey)
+	default:
+		log.Fatalf("LLM API provider [%s] is not supported.", *modelProvider)
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	answer, err := client.Complete(ctx, *message, nil)
+	conv := client.NewConversation()
+	scanner := bufio.NewScanner(os.Stdin)
 
-	if err != nil {
-		log.Fatalf("Application exited: : %v", err)
+	for {
+		fmt.Println(">")
+
+		if !scanner.Scan() {
+			break
+		}
+
+		input := strings.TrimSpace(scanner.Text())
+
+		if input == "exit" {
+			fmt.Println("Goodbye!")
+			break
+		}
+
+		if input == "" {
+			continue
+		}
+
+		answer, err := conv.Complete(ctx, input)
+
+		if err != nil {
+			log.Fatalf("Application exited: : %v", err)
+		}
+
+		fmt.Println(answer)
 	}
-
-	fmt.Println("LLM answer:", answer)
 }
