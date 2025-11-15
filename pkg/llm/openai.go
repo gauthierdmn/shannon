@@ -11,7 +11,7 @@ import (
 )
 
 const apiEndpoint string = "https://api.openai.com/v1/responses"
-const developerPrompt string = "You are a pirate, skip reasoning steps, just answer directly"
+const developerPrompt string = "You are a pirate, skip reasoning steps, and answer in less than 10 words."
 
 type OpenaiClient struct {
 	model      string
@@ -19,9 +19,14 @@ type OpenaiClient struct {
 	httpClient *http.Client
 }
 
-type Message struct {
+type OpenaiMessage struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
+}
+
+type OpenaiConversation struct {
+	client  *OpenaiClient
+	history []OpenaiMessage
 }
 
 type Reasoning struct {
@@ -29,12 +34,12 @@ type Reasoning struct {
 }
 
 type OpenaiRequest struct {
-	Model           string    `json:"model"`
-	Messages        []Message `json:"input"`
-	Store           bool      `json:"store"`
-	MaxOutputTokens int       `json:"max_output_tokens"`
-	MaxToolCalls    int       `json:"max_tool_calls"`
-	Reasoning       Reasoning `json:"reasoning"`
+	Model           string          `json:"model"`
+	Messages        []OpenaiMessage `json:"input"`
+	Store           bool            `json:"store"`
+	MaxOutputTokens int             `json:"max_output_tokens"`
+	MaxToolCalls    int             `json:"max_tool_calls"`
+	Reasoning       Reasoning       `json:"reasoning"`
 }
 
 type OpenaiResponseError struct {
@@ -60,7 +65,7 @@ type OpenaiResponse struct {
 }
 
 // create a new OpenAI client
-func New(model, apiToken string) *OpenaiClient {
+func NewOpenaiClient(model, apiToken string) *OpenaiClient {
 	return &OpenaiClient{
 		model:      model,
 		apiToken:   apiToken,
@@ -68,34 +73,49 @@ func New(model, apiToken string) *OpenaiClient {
 	}
 }
 
-// complete a text message using the Open AI completion API
-func (client *OpenaiClient) Complete(ctx context.Context, message string, history []Message) (string, error) {
+func (client *OpenaiClient) NewConversation() Conversation {
+	return &OpenaiConversation{
+		client:  client,
+		history: nil,
+	}
+}
 
-	req, err := client.buildRequest(ctx, message, history)
+// complete a text message using the Open AI completion API
+func (conv *OpenaiConversation) Complete(ctx context.Context, message string) (string, error) {
+
+	messages := appendHistory(message, "user", conv.history)
+
+	req, err := conv.client.buildRequest(ctx, messages)
 	if err != nil {
 		return "", fmt.Errorf("error when building openai request: %s", err)
 	}
 
-	resp, err := client.httpClient.Do(req)
+	resp, err := conv.client.httpClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("error when sending HTTP request: %w", err)
 	}
 
 	defer resp.Body.Close()
 
-	return parseResponse(resp)
+	messageResp, err := parseResponse(resp)
+	if err != nil {
+		return "", fmt.Errorf("error when parsing HTTP response: %w", err)
+	}
+
+	conv.history = messages
+	conv.history = appendHistory(messageResp, "assistant", conv.history)
+
+	return messageResp, nil
 }
 
 // build an HTTP request for the OpenAI completion API
-func (client *OpenaiClient) buildRequest(ctx context.Context, message string, history []Message) (*http.Request, error) {
-
-	messages := appendHistory(message, history)
+func (client *OpenaiClient) buildRequest(ctx context.Context, messages []OpenaiMessage) (*http.Request, error) {
 
 	payload := OpenaiRequest{
 		Model:           client.model,
 		Messages:        messages,
 		Store:           false,
-		MaxOutputTokens: 10, // minimum is 16
+		MaxOutputTokens: 500, // minimum is 16
 		MaxToolCalls:    1,
 		Reasoning: Reasoning{
 			Effort: "low",
@@ -119,18 +139,18 @@ func (client *OpenaiClient) buildRequest(ctx context.Context, message string, hi
 }
 
 // append an input message to a history of messages
-func appendHistory(message string, history []Message) []Message {
-	messages := []Message{
-		{Role: "system", Content: developerPrompt},
+func appendHistory(message, role string, history []OpenaiMessage) []OpenaiMessage {
+
+	// initialize history with system prompt
+	if history == nil {
+		history = []OpenaiMessage{
+			{Role: "system", Content: developerPrompt},
+		}
 	}
 
-	if len(history) > 0 {
-		messages = append(messages, history...)
-	}
+	history = append(history, OpenaiMessage{Role: role, Content: message})
 
-	messages = append(messages, Message{Role: "user", Content: message})
-
-	return messages
+	return history
 }
 
 // parse an OpenAI completion API response
