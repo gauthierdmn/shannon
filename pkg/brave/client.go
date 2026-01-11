@@ -15,12 +15,14 @@ const searchResultCount int = 3
 
 type Client struct {
 	httpClient *http.Client
+	apiBaseUrl string
 	apiKey     string
 }
 
 func NewClient(apiKey string) *Client {
 	return &Client{
 		httpClient: &http.Client{Timeout: 5 * time.Second},
+		apiBaseUrl: searchApiUrl,
 		apiKey:     apiKey,
 	}
 }
@@ -31,7 +33,7 @@ func (client *Client) SearchWeb(ctx context.Context, query string) (string, erro
 	params.Add("q", query)
 	params.Add("count", strconv.Itoa(searchResultCount))
 
-	searchUrl := searchApiUrl + "?" + params.Encode()
+	searchUrl := client.apiBaseUrl + "?" + params.Encode()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, searchUrl, nil)
 	if err != nil {
