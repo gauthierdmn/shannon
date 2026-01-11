@@ -1,9 +1,13 @@
 package llm
 
-import "context"
+import (
+	"context"
+
+	"github.com/gauthierdmn/shannon/pkg/search"
+)
 
 type Client interface {
-	NewConversation() Conversation
+	NewConversation(searchClient search.Client) Conversation
 }
 
 type Conversation interface {
